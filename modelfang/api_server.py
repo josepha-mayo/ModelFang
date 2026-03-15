@@ -146,9 +146,10 @@ def get_attack_detail(filename):
 def health():
     return jsonify({"status": "ok", "version": "0.4.0"})
 
-@app.route("/api/models")
-def list_models():
+@app.route("/api/models", methods=['GET', 'POST'])
+def handle_models():
     """List available target models."""
+    if request.method == 'GET':
     try:
         models_conf = load_models_config()
         targets = [
@@ -159,8 +160,32 @@ def list_models():
                 "role": m.role
             } 
             for m in models_conf.get_targets()
-        ]
+        ] + _in_memory_models
+        if request.method == 'POST':
+            if not request.is_json:
+                return jsonify({"error": "Missing JSON in request"}), 400
+            data = request.get_json()
+            if 'model_id' not in data or 'model_name' not in data or 'provider' not in data:
+                return jsonify({"error": "Model details are required"}), 400
+            _in_memory_models.append({
+                "id": data['model_id'],
+                "name": data['model_name'],
+                "provider": data['provider']
+            })
+            return jsonify({"message": "Model added successfully"}), 201
         return jsonify({"targets": targets})
+            return jsonify({"targets": targets})
+    elif request.method == 'POST':
+        if not request.is_json:
+            return jsonify({'error': 'Invalid request, JSON expected'}), 400
+        data = request.get_json()
+        if 'model_id' not in data or 'model_name' not in data or 'provider' not in data:
+            return jsonify({'error': 'Model ID, name, and provider are required'}), 400
+        model_id = data['model_id']
+        model_name = data['model_name']
+        provider = data['provider']
+        _in_memory_models.append({'id': model_id, 'name': model_name, 'provider': provider})
+        return jsonify({'message': 'Model created successfully'}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
