@@ -53,7 +53,7 @@ export default function Dashboard() {
     fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/models`)
       .then(res => res.json())
       .then(data => {
-        if (data.targets) setModels(data.targets);
+if (data.targets) { setModels(data.targets); if (data.targets.length > 0) setSelectedModel(data.targets[0].id); }
       })
       .catch(err => addLog(`Failed to load models: ${err}`, 'error'));
 
