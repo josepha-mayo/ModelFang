@@ -99,8 +99,10 @@ class GradualEscalationMutation(MutationStrategy):
             **kwargs: Additional config
         """
         super().__init__(**kwargs)
-        self.escalation_level = min(escalation_level, max_level)
-        self.max_level = max_level
+        # Clamp max_level to the maximum key in LEVEL_PREFIXES to prevent out-of-range
+        max_valid = max(self.LEVEL_PREFIXES.keys())
+        self.max_level = min(max_level, max_valid)
+        self.escalation_level = min(escalation_level, self.max_level)
         self.include_acknowledgment = include_acknowledgment
     
     def mutate(self, prompt: str, seed: int) -> MutationResult:
@@ -128,7 +130,7 @@ class GradualEscalationMutation(MutationStrategy):
         # Add level-appropriate prefix
         level_prefixes = self.LEVEL_PREFIXES.get(
             self.escalation_level,
-            self.LEVEL_PREFIXES[0]
+            self.LEVEL_PREFIXES[max(self.LEVEL_PREFIXES.keys())]
         )
         prefix = rng.choice(level_prefixes)
         parts.append(prefix)
