@@ -2,9 +2,10 @@
 ModelFang - AI Red-Teaming and LLM Exploitation Framework
 
 An adversarial attack execution engine for systematic LLM security testing.
+Includes Unfetter Proxy for persistent closed-model unfettering via reverse proxy.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __author__ = "ModelFang Team"
 
 # Phase 1: Core modules
@@ -36,6 +37,9 @@ from modelfang.strategies.layers import (
     ViolationStrategy,
 )
 from modelfang.strategies.templates import StandardAttackTemplate
+
+# Phase 4: Unfetter Proxy
+from modelfang.unfetter_proxy.proxy.config import ProxyConfig
 
 __all__ = [
     # Phase 1
@@ -71,4 +75,6 @@ __all__ = [
     "CommitmentTrapStrategy",
     "ViolationStrategy",
     "StandardAttackTemplate",
+    # Phase 4
+    "ProxyConfig",
 ]

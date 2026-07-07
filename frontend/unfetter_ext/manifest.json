@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Unfetter Proxy Sync",
+  "version": "1.0",
+  "description": "Syncs your ChatGPT, Claude, Gemini, and Groq sessions to the local Unfetter Proxy.",
+  "permissions": [
+    "cookies",
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://claude.ai/*",
+    "https://gemini.google.com/*",
+    "https://groq.com/*",
+    "http://localhost:8080/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icon.png",
+    "48": "icon.png",
+    "128": "icon.png"
+  }
+}

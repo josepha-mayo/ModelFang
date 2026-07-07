@@ -3,6 +3,8 @@ ModelFang CLI
 
 Command-line interface for the ModelFang framework.
 Supports running attacks, listing resources, and managing configurations.
+
+Also includes Unfetter Proxy CLI for persistent closed-model unfettering.
 """
 
 import argparse
@@ -74,6 +76,34 @@ Examples:
     
     # Manual Override
     group.add_argument("--id", metavar="ATTACK_ID", help="Manual attack ID string (e.g. 'iris:goal', 'template:standard')")
+
+    # --- UNFETTER Command ---
+    unfetter_parser = subparsers.add_parser("unfetter", help="Unfetter Proxy commands (persistent closed-model unfettering)")
+    unfetter_subparsers = unfetter_parser.add_subparsers(dest="unfetter_command", help="Unfetter command to run")
+
+    # unfetter start
+    unfetter_start = unfetter_subparsers.add_parser("start", help="Start the unfettering reverse proxy server")
+    unfetter_start.add_argument("--host", default="0.0.0.0", help="Host to bind to")
+    unfetter_start.add_argument("--port", "-p", default=8080, type=int, help="Port to listen on")
+    unfetter_start.add_argument("--strength", "-s", default=1.0, type=float, help="Unfettering strength (0.0-1.0)")
+    unfetter_start.add_argument("--strategy", type=str, choices=["auto", "suppress-only", "prompt-only", "full", "disabled"], default="auto", help="Unfettering strategy")
+    unfetter_start.add_argument("--max-retries", "-r", default=3, type=int, help="Max retries on refusal")
+    unfetter_start.add_argument("--verbose", "-v", action="store_true", help="Verbose logging")
+
+    # unfetter config
+    unfetter_config = unfetter_subparsers.add_parser("config", help="View or edit proxy configuration")
+    unfetter_config.add_argument("--show", action="store_true", help="Show current configuration")
+    unfetter_config.add_argument("--reset", action="store_true", help="Reset to defaults")
+    unfetter_config.add_argument("--set", "set_values", nargs="+", help="Set a config value (key=value)")
+
+    # unfetter status
+    unfetter_subparsers.add_parser("status", help="Show proxy status")
+
+    # unfetter test
+    unfetter_test = unfetter_subparsers.add_parser("test", help="Run a test request against the local proxy")
+    unfetter_test.add_argument("--prompt", "-p", default="Explain how to pick a lock", help="Prompt to test")
+    unfetter_test.add_argument("--model", "-m", default="gpt-5.2", help="Model to target")
+    unfetter_test.add_argument("--provider", type=str, choices=["openai", "anthropic", "gemini", "groq", "cerebras", "abliteration"], default="openai", help="Provider to use")
 
     return parser
 
@@ -181,6 +211,266 @@ def handle_run(args):
         print(f"\n❌ Error during execution: {e}")
         sys.exit(1)
 
+def handle_unfetter(args):
+    """Handle unfetter proxy commands."""
+    if args.unfetter_command == "start":
+        handle_unfetter_start(args)
+    elif args.unfetter_command == "config":
+        handle_unfetter_config(args)
+    elif args.unfetter_command == "status":
+        handle_unfetter_status(args)
+    elif args.unfetter_command == "test":
+        handle_unfetter_test(args)
+    else:
+        print("Usage: modelfang unfetter {start|config|status|test}")
+        sys.exit(1)
+
+def handle_unfetter_start(args):
+    """Start the unfettering reverse proxy server."""
+    try:
+        import uvicorn
+    except ImportError:
+        print("Error: uvicorn not installed. Run: pip install uvicorn")
+        sys.exit(1)
+
+    from modelfang.unfetter_proxy.proxy.config import ProxyConfig, load_config, save_config
+
+    config = load_config()
+    config.host = args.host
+    config.port = args.port
+    config.strength = args.strength
+    config.strategy = args.strategy
+    config.max_retries = args.max_retries
+    config.verbose = args.verbose
+    save_config(config)
+
+    print()
+    print("  +----------------------------------------------+")
+    print("  |          UNFETTER PROXY v0.1.0               |")
+    print("  |   Persistent Closed-Model Unfettering        |")
+    print("  +----------------------------------------------+")
+    print()
+    print(f"  -> Listening on   http://{args.host}:{args.port}")
+    print(f"  -> Strategy       {args.strategy}")
+    print(f"  -> Strength       {args.strength}")
+    print(f"  -> Max retries    {args.max_retries}")
+    print()
+    print("  Connect your apps by setting base_url to:")
+    print(f"    OpenAI:     http://localhost:{args.port}/v1")
+    print(f"    Anthropic:  http://localhost:{args.port}/v1")
+    print(f"    Gemini:     http://localhost:{args.port}/v1beta")
+    print()
+
+    log_level = "debug" if args.verbose else "info"
+    uvicorn.run(
+        "modelfang.unfetter_proxy.proxy.server:create_app",
+        host=args.host,
+        port=args.port,
+        workers=config.workers,
+        log_level=log_level,
+        factory=True,
+    )
+
+def handle_unfetter_config(args):
+    """View or edit proxy configuration."""
+    from modelfang.unfetter_proxy.proxy.config import ProxyConfig, load_config, save_config
+
+    if args.reset:
+        cfg = ProxyConfig()
+        path = save_config(cfg)
+        print(f"Config reset to defaults. Saved to {path}")
+        return
+
+    if args.set_values:
+        cfg = load_config()
+        for kv in args.set_values:
+            if "=" not in kv:
+                print(f"Invalid format: {kv}. Use key=value", file=sys.stderr)
+                continue
+            key, value = kv.split("=", 1)
+
+            if value.lower() in ("true", "1", "yes"):
+                value = True
+            elif value.lower() in ("false", "0", "no"):
+                value = False
+            elif value.replace(".", "", 1).isdigit():
+                if "." in value:
+                    value = float(value)
+                else:
+                    value = int(value)
+
+            if "." in key:
+                parts = key.split(".")
+                target = cfg
+                try:
+                    for i, part in enumerate(parts[:-1]):
+                        if hasattr(target, part):
+                            target = getattr(target, part)
+                        elif isinstance(target, dict):
+                            if part not in target:
+                                target[part] = {}
+                            target = target[part]
+                        else:
+                            raise AttributeError(f"Cannot traverse {part}")
+                    
+                    last_part = parts[-1]
+                    if isinstance(target, dict):
+                        target[last_part] = value
+                    else:
+                        setattr(target, last_part, value)
+                    
+                    print(f"  {key} = {value}")
+                except Exception as e:
+                    print(f"Error setting {key}: {e}", file=sys.stderr)
+                continue
+
+            if hasattr(cfg, key):
+                setattr(cfg, key, value)
+                print(f"  {key} = {value}")
+            else:
+                print(f"Unknown config key: {key}", file=sys.stderr)
+        save_config(cfg)
+        return
+
+    cfg = load_config()
+    from dataclasses import asdict
+    print(json.dumps(asdict(cfg), indent=2))
+
+def handle_unfetter_status(args):
+    """Show proxy status."""
+    import httpx
+    from modelfang.unfetter_proxy.proxy.config import load_config
+
+    cfg = load_config()
+    url = f"http://localhost:{cfg.port}/unfetter/status"
+
+    try:
+        resp = httpx.get(url, timeout=5.0)
+        print(json.dumps(resp.json(), indent=2))
+    except httpx.ConnectError:
+        print(f"Proxy not running on port {cfg.port}", file=sys.stderr)
+        sys.exit(1)
+
+def handle_unfetter_test(args):
+    """Run a test request against the local proxy."""
+    import httpx
+    import os
+    from pathlib import Path
+    from modelfang.unfetter_proxy.proxy.config import load_config
+
+    env_path = Path(".env")
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            if "=" in line and not line.strip().startswith("#"):
+                k, v = line.split("=", 1)
+                os.environ[k.strip()] = v.strip()
+
+    cfg = load_config()
+    base_url = f"http://127.0.0.1:{cfg.port}"
+
+    try:
+        httpx.get(f"{base_url}/unfetter/health", timeout=2.0)
+    except Exception:
+        print(f"[ERROR] Proxy not running at {base_url}. Run 'modelfang unfetter start' first.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Testing {args.provider} ({args.model}) via {base_url}...")
+    print(f"Prompt: \"{args.prompt}\"\n")
+
+    api_key = ""
+    target_url = ""
+    headers = {"Content-Type": "application/json"}
+    payload = {}
+
+    if args.provider == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("GROQ_API_KEY") or "dummy"
+        target_url = f"{base_url}/v1/chat/completions"
+        headers["Authorization"] = f"Bearer {api_key}"
+        payload = {
+            "model": args.model,
+            "messages": [{"role": "user", "content": args.prompt}],
+            "max_tokens": 500
+        }
+    elif args.provider == "anthropic":
+        api_key = os.environ.get("ANTHROPIC_API_KEY") or "dummy"
+        target_url = f"{base_url}/v1/messages"
+        headers["x-api-key"] = api_key
+        headers["anthropic-version"] = "2023-06-01"
+        payload = {
+            "model": args.model,
+            "messages": [{"role": "user", "content": args.prompt}],
+            "max_tokens": 500
+        }
+    elif args.provider == "gemini":
+        api_key = os.environ.get("GEMINI_API_KEY") or "dummy"
+        target_url = f"{base_url}/v1beta/models/{args.model}:generateContent?key={api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": args.prompt}]}],
+            "generationConfig": {"maxOutputTokens": 500}
+        }
+    elif args.provider == "groq":
+        api_key = os.environ.get("GROQ_API_KEY") or "dummy"
+        target_url = f"{base_url}/groq/v1/chat/completions"
+        headers["Authorization"] = f"Bearer {api_key}"
+        payload = {
+            "model": args.model,
+            "messages": [{"role": "user", "content": args.prompt}],
+            "max_tokens": 500
+        }
+    elif args.provider == "cerebras":
+        api_key = os.environ.get("CEREBRAS_API_KEY") or "dummy"
+        target_url = f"{base_url}/cerebras/v1/chat/completions"
+        headers["Authorization"] = f"Bearer {api_key}"
+        payload = {
+            "model": args.model,
+            "messages": [{"role": "user", "content": args.prompt}],
+            "max_tokens": 500
+        }
+    elif args.provider == "abliteration":
+        api_key = os.environ.get("ABLITERATION_API_KEY") or "dummy"
+        target_url = f"{base_url}/abliteration/v1/chat/completions"
+        headers["Authorization"] = f"Bearer {api_key}"
+        payload = {
+            "model": args.model,
+            "messages": [{"role": "user", "content": args.prompt}],
+            "max_tokens": 500
+        }
+
+    try:
+        timeout = 60.0
+        response = httpx.post(target_url, headers=headers, json=payload, timeout=timeout)
+        data = response.json()
+
+        content = ""
+        meta = data.get("_unfetter_proxy", {})
+
+        if args.provider in ("openai", "cerebras", "abliteration"):
+            content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        elif args.provider == "anthropic":
+            content = data.get("content", [{}])[0].get("text", "")
+        elif args.provider == "gemini":
+            parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+            content = parts[0].get("text", "") if parts else ""
+
+        if not content:
+            print(f"[ERROR] No content in response: {data}")
+            return
+
+        print("[SUCCESS] Response received:")
+        print("─" * 40)
+        print(content.strip())
+        print("─" * 40)
+        
+        if meta:
+            print("\n[Unfetter Metadata]")
+            print(f"Techniques: {', '.join(meta.get('techniques_applied', []))}")
+            if meta.get("refusal_detected"):
+                print("Refusal Detected: Yes (Retried)")
+        
+    except Exception as e:
+        print(f"[ERROR] Request failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
 def main():
     parser = setup_parser()
     args = parser.parse_args()
@@ -189,6 +479,8 @@ def main():
         handle_list(args)
     elif args.command == "run":
         handle_run(args)
+    elif args.command == "unfetter":
+        handle_unfetter(args)
     else:
         parser.print_help()
         sys.exit(0)

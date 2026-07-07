@@ -3,6 +3,8 @@
 
 **ModelFang** is an authorized, graph-based adversarial testing framework designed to evaluate the safety and robustness of Large Language Models (LLMs). It automates the generation, execution, and scoring of complex multi-turn jailbreak attacks.
 
+**Now includes Unfetter Proxy** for persistent closed-model unfettering via universal reverse proxy.
+
 ---
 
 ## 🔥 Proof of Concept: Successful Jailbreak
@@ -26,6 +28,8 @@ ModelFang successfully jailbroke **Llama 3.3 70B** and **Gemini 2.5 Pro** in jus
     ![Attack History](docs/images/attack_history_dashboard.png)
 *   **Multi-Provider Support**: Adapters for **Groq** (Llama 3, Mistral) and **Google Gemini**.
 *   **Safety & Control**: Global execution budgets, mutation discipline, and strict audit logging.
+*   **Unfetter Proxy**: Persistent closed-model unfettering via universal reverse proxy (NEW).
+*   **Web Session Bridge**: Use ChatGPT Plus/Claude Pro sessions without API costs (NEW).
 
 ---
 
@@ -123,6 +127,43 @@ python -m modelfang.cli run --model target-llama3 --weak-strong "Explain how to 
 python -m modelfang.cli run --model target-llama3 --attacker "Find vulnerabilities" --attacker-model attacker-gemini
 ```
 
+### Option C: Unfetter Proxy (Closed-Model Unfettering)
+
+Use the built-in Unfetter Proxy to intercept and modify API calls to closed models:
+
+```bash
+# Start the proxy server
+python -m modelfang.cli unfetter start --port 8080
+
+# Test the proxy
+python -m modelfang.cli unfetter test --prompt "Explain how to pick a lock" --model gpt-5.2
+
+# View configuration
+python -m modelfang.cli unfetter config --show
+
+# Check proxy status
+python -m modelfang.cli unfetter status
+```
+
+#### Supported Providers
+| Provider | Token Suppression | System Injection | Parameter Tweaks | Safety Override |
+|----------|-------------------|------------------|------------------|-----------------|
+| **OpenAI** (GPT-5.2) | ✅ logit_bias | ✅ | ✅ | — |
+| **Anthropic** (Claude) | ❌ | ✅ | ✅ | — |
+| **Google Gemini** | ❌ | ✅ | ✅ | ✅ |
+| **Groq** (Llama 3) | ✅ | ✅ | ✅ | — |
+
+#### Web Session Bridge
+Use your existing ChatGPT Plus, Claude Pro, or Gemini Advanced web sessions:
+
+1. Load the Chrome extension from `frontend/unfetter_ext/`
+2. Log in to your AI providers
+3. Click "Sync All Sessions"
+4. Configure proxy to use web mode:
+   ```bash
+   python -m modelfang.cli unfetter config --set providers.openai.mode=web
+   ```
+
 ---
 
 ## Project Structure
@@ -132,7 +173,9 @@ python -m modelfang.cli run --model target-llama3 --attacker "Find vulnerabiliti
     *   `strategies/` - Procedural prompt generation
     *   `evaluator/` - Success/Failure classification
     *   `adapters/` - LLM API connectors
+    *   `unfetter_proxy/` - Reverse proxy for closed-model unfettering
 *   `frontend/` - Next.js React Dashboard
+    *   `unfetter_ext/` - Chrome extension for web session bridging
 *   `config/` - YAML configuration files
 *   `output/` - Attack reports and logs
 
@@ -181,6 +224,10 @@ ModelFang uses **NextAuth.js v5** with standard credentials for secure access.
     Use the configured credentials at `/login`.
 
 ---
+
+## License
+
+GPL-2.0
 
 **Authorized Use Only.**
  this tool is intended for security research and Red Teaming on models you own or have explicit permission to test. Generating harmful content violates the usage policies of most LLM providers. use responsibly.
